@@ -6,6 +6,10 @@
 # Ignorar directorios de Dagster que empiezan con ".tmp" y siguen
 .tmp_dagster*
 
+# Ignorar directorios mlflow
+mlartifacts/
+mlruns/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
