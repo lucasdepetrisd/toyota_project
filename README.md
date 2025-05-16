@@ -18,17 +18,17 @@
    conda config --add channels conda-forge
    ```
 
-4. Instalar dependencias:
+3. Instalar dependencias:
     ```powershell
     pip install -e ".[dev]"
     ```
 
-5. Iniciar el servidor:
+4. Iniciar el servidor:
     ```powershell
     dagster dev
     ```
 
-6. Abrir el navegador en `http://localhost:3000` para ver el proyecto.
+5. Abrir el navegador en `http://localhost:3000` para ver el proyecto.
 
 ### Como replicar este proyecto
 
