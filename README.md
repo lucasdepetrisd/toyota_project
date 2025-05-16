@@ -13,18 +13,22 @@
     conda activate toyota
     conda install dagster poetry
     ```
+    Si conda no puede instalar proba agregando el canal conda-forge:
+   ```powershell
+   conda config --add channels conda-forge
+   ```
 
-3. Instalar dependencias:
+4. Instalar dependencias:
     ```powershell
     pip install -e ".[dev]"
     ```
 
-4. Iniciar el servidor:
+5. Iniciar el servidor:
     ```powershell
     dagster dev
     ```
 
-5. Abrir el navegador en `http://localhost:3000` para ver el proyecto.
+6. Abrir el navegador en `http://localhost:3000` para ver el proyecto.
 
 ### Como replicar este proyecto
 
