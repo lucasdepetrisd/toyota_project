@@ -45,7 +45,7 @@
 4. Instalar dependencias e iniciar servidor:
     ```powershell
     pip install -e ".[dev]"
-    poetry add pandas
+    poetry add pandas scikit-learn statsmodels mlflow
     dagster dev
     ```
 
