@@ -6,37 +6,107 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 from sklearn.model_selection import train_test_split
 from sklearn.impute import SimpleImputer
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 @asset
 def load_data() -> pd.DataFrame:
-    df = pd.read_csv("https://raw.githubusercontent.com/dodobeatle/dataeng-datos/refs/heads/main/ToyotaCorolla.csv", encoding="latin1")
-    
-    # Filtramos las columnas necesarias
-    columnas = ["Price", "Age_08_04", "KM", "cc", "Doors", "Weight", 
+    df = pd.read_csv(
+        "https://raw.githubusercontent.com/dodobeatle/dataeng-datos/refs/heads/main/ToyotaCorolla.csv", 
+        encoding="latin1"
+    )
+    return df 
+
+@asset
+def eda(load_data: pd.DataFrame) -> pd.DataFrame:
+    # Filtrar columnas relevantes
+    columnas = ["Price", "Age_08_04", "KM", "cc", "Doors", "Weight",
                 "Automatic", "Fuel_Type", "Met_Color", "Quarterly_Tax"]
-    df = df[columnas]
-    
-    # Codificamos variables categóricas
+    df_selected = load_data[columnas].copy()
+
+    # Pairplot
+    sns.pairplot(data=df_selected.select_dtypes(include=np.number))
+    plt.suptitle("Pairplot - Features Seleccionadas", y=1.02)
+    plt.tight_layout()
+    plt.show()
+
+    # Matriz de correlación
+    corr_matrix = df_selected.select_dtypes(include=np.number).corr(method='pearson')
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', fmt='.2f')
+    plt.title('Matriz de Correlación - Features Seleccionadas')
+    plt.tight_layout()
+    plt.show()
+
+    # Detección de outliers con IQR
+    def detect_outliers(df_num):
+        outliers = pd.DataFrame(columns=['Feature', 'Number of Outliers'])
+        for column in df_num.columns:
+            q1 = df_num[column].quantile(0.25)
+            q3 = df_num[column].quantile(0.75)
+            iqr = q3 - q1
+            low = q1 - 1.5 * iqr
+            high = q3 + 1.5 * iqr
+            n_outliers = df_num[(df_num[column] < low) | (df_num[column] > high)].shape[0]
+            outliers = pd.concat(
+                [outliers, pd.DataFrame({'Feature': [column], 'Number of Outliers': [n_outliers]})],
+                ignore_index=True
+            )
+        return outliers
+
+    outliers_df = detect_outliers(df_selected.select_dtypes(include=np.number))
+    print("🔎 Outliers detectados:")
+    print(outliers_df)
+
+    # Boxplots
+    num_cols = df_selected.select_dtypes(include=np.number).columns.tolist()
+    n = len(num_cols)
+    cols = 3
+    rows = int(np.ceil(n / cols))
+
+    plt.figure(figsize=(5 * cols, 4 * rows))
+    for i, column in enumerate(num_cols):
+        plt.subplot(rows, cols, i + 1)
+        sns.boxplot(y=df_selected[column])
+        plt.title(f'Boxplot de {column}')
+        plt.tight_layout()
+    plt.suptitle('Boxplots - Features Seleccionadas', fontsize=16, y=1.02)
+    plt.subplots_adjust(hspace=0.5, wspace=0.4)
+    plt.tight_layout()
+    plt.show()
+
+    # Scatterplots
+    plt.figure(figsize=(15, 10))
+    for i, column in enumerate([c for c in columnas if c != "Price"]):
+        plt.subplot(3, 3, i + 1)
+        sns.scatterplot(x=df_selected[column], y=df_selected["Price"])
+        plt.title(f'{column} vs Precio')
+        plt.tight_layout()
+    plt.suptitle('Scatterplots de Features vs Precio', fontsize=16, y=1.02)
+    plt.tight_layout()
+    plt.show()
+
+    # ✅ Devolver el DataFrame filtrado para que lo use el siguiente asset si es necesario
+    return df_selected
+
+@asset
+def preparar_datos(eda: pd.DataFrame) -> dict:
+    df = eda.copy()
+
+    # Codificación
     df["Automatic"] = df["Automatic"].map({"Yes": 1, "No": 0})
     df = pd.get_dummies(df, columns=["Fuel_Type"], drop_first=True)
 
-    return df
-
-@asset
-def eda(load_data: pd.DataFrame):
-    print(load_data.describe())
-    return load_data 
-
-@asset
-def preparar_datos(load_data: pd.DataFrame) -> dict:
+    # Variables predictoras y target
     features = ['Age_08_04', 'KM', 'cc', 'Doors', 'Weight', 'Automatic', 
                 'Met_Color', 'Quarterly_Tax', 'Fuel_Type_Diesel', 'Fuel_Type_Petrol']
-    X = load_data[features]
-    y = load_data["Price"]
-    
+    X = df[features]
+    y = df["Price"]
+
+    # División train-test
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
+
     return {
         "X_train": X_train,
         "X_test": X_test,
