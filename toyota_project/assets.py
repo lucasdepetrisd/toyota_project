@@ -8,13 +8,15 @@ from sklearn.impute import SimpleImputer
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+
 @asset
 def load_data() -> pd.DataFrame:
     df = pd.read_csv(
-        "https://raw.githubusercontent.com/dodobeatle/dataeng-datos/refs/heads/main/ToyotaCorolla.csv", 
+        "https://raw.githubusercontent.com/dodobeatle/dataeng-datos/refs/heads/main/ToyotaCorolla.csv",
         encoding="latin1"
     )
-    return df 
+    return df
+
 
 @asset
 def eda(load_data: pd.DataFrame) -> pd.DataFrame:
@@ -30,7 +32,8 @@ def eda(load_data: pd.DataFrame) -> pd.DataFrame:
     plt.show()
 
     # Matriz de correlación
-    corr_matrix = df_selected.select_dtypes(include=np.number).corr(method='pearson')
+    corr_matrix = df_selected.select_dtypes(
+        include=np.number).corr(method='pearson')
     plt.figure(figsize=(10, 8))
     sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', fmt='.2f')
     plt.title('Matriz de Correlación - Features Seleccionadas')
@@ -46,9 +49,11 @@ def eda(load_data: pd.DataFrame) -> pd.DataFrame:
             iqr = q3 - q1
             low = q1 - 1.5 * iqr
             high = q3 + 1.5 * iqr
-            n_outliers = df_num[(df_num[column] < low) | (df_num[column] > high)].shape[0]
+            n_outliers = df_num[(df_num[column] < low) |
+                                (df_num[column] > high)].shape[0]
             outliers = pd.concat(
-                [outliers, pd.DataFrame({'Feature': [column], 'Number of Outliers': [n_outliers]})],
+                [outliers, pd.DataFrame(
+                    {'Feature': [column], 'Number of Outliers': [n_outliers]})],
                 ignore_index=True
             )
         return outliers
@@ -88,6 +93,7 @@ def eda(load_data: pd.DataFrame) -> pd.DataFrame:
     # ✅ Devolver el DataFrame filtrado para que lo use el siguiente asset si es necesario
     return df_selected
 
+
 @asset
 def preparar_datos(eda: pd.DataFrame) -> dict:
     df = eda.copy()
@@ -97,7 +103,7 @@ def preparar_datos(eda: pd.DataFrame) -> dict:
     df = pd.get_dummies(df, columns=["Fuel_Type"], drop_first=True)
 
     # Variables predictoras y target
-    features = ['Age_08_04', 'KM', 'cc', 'Doors', 'Weight', 'Automatic', 
+    features = ['Age_08_04', 'KM', 'cc', 'Doors', 'Weight', 'Automatic',
                 'Met_Color', 'Quarterly_Tax', 'Fuel_Type_Diesel', 'Fuel_Type_Petrol']
     X = df[features]
     y = df["Price"]
@@ -113,6 +119,7 @@ def preparar_datos(eda: pd.DataFrame) -> dict:
         "y_train": y_train,
         "y_test": y_test
     }
+
 
 @asset
 def entrenar_modelo(preparar_datos: dict) -> dict:
@@ -151,12 +158,14 @@ def entrenar_modelo(preparar_datos: dict) -> dict:
         "X_test": X_test_imputed,
         "y_test": y_test
     }
+
+
 @asset
 def evaluar_modelo(entrenar_modelo: dict):
     modelo = entrenar_modelo["modelo"]
     X_test = entrenar_modelo["X_test"]
     y_test = entrenar_modelo["y_test"]
-    
+
     y_pred = modelo.predict(X_test)
     mse = mean_squared_error(y_test, y_pred)
     rmse = np.sqrt(mse)
@@ -167,6 +176,7 @@ def evaluar_modelo(entrenar_modelo: dict):
     print(f"📈 RMSE: {rmse:.2f}")
     print(f"📈 MAE: {mae:.2f}")
     print(f"📈 RSS: {rss:.2f}")
+
 
 @asset
 def analizar_residuales(entrenar_modelo: dict):
