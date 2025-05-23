@@ -105,8 +105,7 @@ def preparar_datos(eda: pd.DataFrame) -> dict:
     # Variables predictoras y target
     features = ['Age_08_04', 'KM', 'cc', 'Doors', 'Weight', 'Automatic',
                 'Met_Color', 'Quarterly_Tax', 'Fuel_Type_Diesel', 'Fuel_Type_Petrol']
-    
-   
+
     X = df[features]
     y = df["Price"]
 
