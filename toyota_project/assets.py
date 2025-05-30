@@ -1,12 +1,13 @@
 import pandas as pd
 import numpy as np
+import mlflow
 from dagster import asset
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error, mean_absolute_error
+from sklearn.linear_model import LinearRegression, LassoCV, RidgeCV
+from sklearn.decomposition import PCA
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.impute import SimpleImputer
-import matplotlib.pyplot as plt
-import seaborn as sns
+from sklearn.preprocessing import StandardScaler
 
 
 @asset
@@ -19,181 +20,176 @@ def load_data() -> pd.DataFrame:
 
 
 @asset
-def eda(load_data: pd.DataFrame) -> pd.DataFrame:
-    # Filtrar columnas relevantes
+def preparar_datos(load_data: pd.DataFrame) -> dict:
     columnas = ["Price", "Age_08_04", "KM", "cc", "Doors", "Weight",
                 "Automatic", "Fuel_Type", "Met_Color", "Quarterly_Tax"]
-    df_selected = load_data[columnas].copy()
+    df = load_data[columnas].copy()
 
-    # Pairplot
-    sns.pairplot(data=df_selected.select_dtypes(include=np.number))
-    plt.suptitle("Pairplot - Features Seleccionadas", y=1.02)
-    plt.tight_layout()
-    plt.show()
-
-    # Matriz de correlación
-    corr_matrix = df_selected.select_dtypes(
-        include=np.number).corr(method='pearson')
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', fmt='.2f')
-    plt.title('Matriz de Correlación - Features Seleccionadas')
-    plt.tight_layout()
-    plt.show()
-
-    # Detección de outliers con IQR
-    def detect_outliers(df_num):
-        outliers = pd.DataFrame(columns=['Feature', 'Number of Outliers'])
-        for column in df_num.columns:
-            q1 = df_num[column].quantile(0.25)
-            q3 = df_num[column].quantile(0.75)
-            iqr = q3 - q1
-            low = q1 - 1.5 * iqr
-            high = q3 + 1.5 * iqr
-            n_outliers = df_num[(df_num[column] < low) |
-                                (df_num[column] > high)].shape[0]
-            outliers = pd.concat(
-                [outliers, pd.DataFrame(
-                    {'Feature': [column], 'Number of Outliers': [n_outliers]})],
-                ignore_index=True
-            )
-        return outliers
-
-    outliers_df = detect_outliers(df_selected.select_dtypes(include=np.number))
-    print("🔎 Outliers detectados:")
-    print(outliers_df)
-
-    # Boxplots
-    num_cols = df_selected.select_dtypes(include=np.number).columns.tolist()
-    n = len(num_cols)
-    cols = 3
-    rows = int(np.ceil(n / cols))
-
-    plt.figure(figsize=(5 * cols, 4 * rows))
-    for i, column in enumerate(num_cols):
-        plt.subplot(rows, cols, i + 1)
-        sns.boxplot(y=df_selected[column])
-        plt.title(f'Boxplot de {column}')
-        plt.tight_layout()
-    plt.suptitle('Boxplots - Features Seleccionadas', fontsize=16, y=1.02)
-    plt.subplots_adjust(hspace=0.5, wspace=0.4)
-    plt.tight_layout()
-    plt.show()
-
-    # Scatterplots
-    plt.figure(figsize=(15, 10))
-    for i, column in enumerate([c for c in columnas if c != "Price"]):
-        plt.subplot(3, 3, i + 1)
-        sns.scatterplot(x=df_selected[column], y=df_selected["Price"])
-        plt.title(f'{column} vs Precio')
-        plt.tight_layout()
-    plt.suptitle('Scatterplots de Features vs Precio', fontsize=16, y=1.02)
-    plt.tight_layout()
-    plt.show()
-
-    # ✅ Devolver el DataFrame filtrado para que lo use el siguiente asset si es necesario
-    return df_selected
-
-
-@asset
-def preparar_datos(eda: pd.DataFrame) -> dict:
-    df = eda.copy()
-
-    # Codificación
     df["Automatic"] = df["Automatic"].map({"Yes": 1, "No": 0})
     df = pd.get_dummies(df, columns=["Fuel_Type"], drop_first=True)
 
-    # Variables predictoras y target
-    features = ['Age_08_04', 'KM', 'cc', 'Doors', 'Weight', 'Automatic',
-                'Met_Color', 'Quarterly_Tax', 'Fuel_Type_Diesel', 'Fuel_Type_Petrol']
+    imputer = SimpleImputer(strategy="median")
+    df_imputed = pd.DataFrame(imputer.fit_transform(df), columns=df.columns)
 
-    X = df[features]
-    y = df["Price"]
+    features = [col for col in df_imputed.columns if col != "Price"]
+    X = df_imputed[features]
+    y = df_imputed["Price"]
 
-    # División train-test
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
 
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
     return {
-        "X_train": X_train,
-        "X_test": X_test,
+        "X_train": X_train_scaled,
+        "X_test": X_test_scaled,
         "y_train": y_train,
-        "y_test": y_test
+        "y_test": y_test,
+        "features": features
     }
 
 
-@asset
-def entrenar_modelo(preparar_datos: dict) -> dict:
-    X_train = preparar_datos["X_train"]
-    y_train = preparar_datos["y_train"]
-    X_test = preparar_datos["X_test"]
-    y_test = preparar_datos["y_test"]
-
-    # 🔍 Eliminar columnas completamente vacías
-    cols_before = set(X_train.columns)
-    X_train = X_train.dropna(axis=1, how='all')
-    X_test = X_test[X_train.columns]  # asegurar que tenga las mismas columnas
-
-    # ⚠️ Imputar valores faltantes con la media
-    imputer = SimpleImputer(strategy="mean")
-    X_train_imputed = pd.DataFrame(
-        imputer.fit_transform(X_train),
-        columns=X_train.columns,
-        index=X_train.index
-    )
-    X_test_imputed = pd.DataFrame(
-        imputer.transform(X_test),
-        columns=X_test.columns,
-        index=X_test.index
-    )
-
-    # 📌 Alinear y_train con X_train imputado
-    y_train_aligned = y_train.loc[X_train_imputed.index]
-
-    # 🔁 Entrenar el modelo
-    modelo = LinearRegression()
-    modelo.fit(X_train_imputed, y_train_aligned)
-
-    return {
-        "modelo": modelo,
-        "X_test": X_test_imputed,
-        "y_test": y_test
-    }
+# --- OLS ---
+@asset(group_name="ols")
+def entrenar_ols(preparar_datos: dict) -> dict:
+    model = LinearRegression()
+    model.fit(preparar_datos["X_train"], preparar_datos["y_train"])
+    return {"modelo": model, **preparar_datos}
 
 
-@asset
-def evaluar_modelo(entrenar_modelo: dict):
-    modelo = entrenar_modelo["modelo"]
-    X_test = entrenar_modelo["X_test"]
-    y_test = entrenar_modelo["y_test"]
+@asset(group_name="ols")
+def evaluar_ols(entrenar_ols: dict) -> dict:
+    modelo = entrenar_ols["modelo"]
+    X_test = entrenar_ols["X_test"]
+    y_test = entrenar_ols["y_test"]
 
     y_pred = modelo.predict(X_test)
     mse = mean_squared_error(y_test, y_pred)
-    rmse = np.sqrt(mse)
     mae = mean_absolute_error(y_test, y_pred)
-    rss = np.sum((y_test - y_pred) ** 2)
+    r2 = r2_score(y_test, y_pred)
 
-    print(f"📈 MSE: {mse:.2f}")
-    print(f"📈 RMSE: {rmse:.2f}")
-    print(f"📈 MAE: {mae:.2f}")
-    print(f"📈 RSS: {rss:.2f}")
+    mlflow.log_metrics({"mse": mse, "mae": mae, "r2": r2})
+
+    print(f"OLS - MSE: {mse:.2f}, MAE: {mae:.2f}, R2: {r2:.2f}")
+
+    return {"mse": mse, "mae": mae, "r2": r2, "modelo": modelo}
 
 
-@asset
-def analizar_residuales(entrenar_modelo: dict):
-    modelo = entrenar_modelo["modelo"]
-    X_test = entrenar_modelo["X_test"]
-    y_test = entrenar_modelo["y_test"]
+# --- Lasso ---
+@asset(group_name="lasso")
+def entrenar_lasso(preparar_datos: dict) -> dict:
+    model = LassoCV(cv=5, random_state=42)
+    model.fit(preparar_datos["X_train"], preparar_datos["y_train"])
+    return {"modelo": model, **preparar_datos}
+
+
+@asset(group_name="lasso")
+def evaluar_lasso(entrenar_lasso: dict) -> dict:
+    modelo = entrenar_lasso["modelo"]
+    X_test = entrenar_lasso["X_test"]
+    y_test = entrenar_lasso["y_test"]
 
     y_pred = modelo.predict(X_test)
-    residuals = y_test - y_pred
+    mse = mean_squared_error(y_test, y_pred)
+    mae = mean_absolute_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
 
-    plt.figure(figsize=(10, 5))
-    plt.scatter(y_pred, residuals)
-    plt.axhline(y=0, color='r', linestyle='--')
-    plt.xlabel("Precio predicho")
-    plt.ylabel("Residuales")
-    plt.title("Análisis de residuales")
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
+    mlflow.log_metrics({"mse": mse, "mae": mae, "r2": r2})
+    mlflow.log_param("alpha", modelo.alpha_)
+
+    print(f"Lasso - MSE: {mse:.2f}, MAE: {mae:.2f}, R2: {r2:.2f}, Alpha: {modelo.alpha_:.5f}")
+
+    return {"mse": mse, "mae": mae, "r2": r2, "alpha": modelo.alpha_, "modelo": modelo}
+
+
+# --- Ridge ---
+@asset(group_name="ridge")
+def entrenar_ridge(preparar_datos: dict) -> dict:
+    alphas = np.logspace(-4, 4, 100)
+    model = RidgeCV(alphas=alphas, cv=5, scoring="neg_mean_squared_error")
+    model.fit(preparar_datos["X_train"], preparar_datos["y_train"])
+    return {"modelo": model, **preparar_datos}
+
+
+@asset(group_name="ridge")
+def evaluar_ridge(entrenar_ridge: dict) -> dict:
+    modelo = entrenar_ridge["modelo"]
+    X_test = entrenar_ridge["X_test"]
+    y_test = entrenar_ridge["y_test"]
+
+    y_pred = modelo.predict(X_test)
+    mse = mean_squared_error(y_test, y_pred)
+    mae = mean_absolute_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
+
+    mlflow.log_metrics({"mse": mse, "mae": mae, "r2": r2})
+    mlflow.log_param("alpha", modelo.alpha_)
+
+    print(f"Ridge - MSE: {mse:.2f}, MAE: {mae:.2f}, R2: {r2:.2f}, Alpha: {modelo.alpha_:.5f}")
+
+    return {"mse": mse, "mae": mae, "r2": r2, "alpha": modelo.alpha_, "modelo": modelo}
+
+
+# --- PCA + OLS ---
+@asset(group_name="pca")
+def entrenar_pca(preparar_datos: dict) -> dict:
+    pca = PCA(n_components=5)
+    X_train_pca = pca.fit_transform(preparar_datos["X_train"])
+    X_test_pca = pca.transform(preparar_datos["X_test"])
+    model = LinearRegression()
+    model.fit(X_train_pca, preparar_datos["y_train"])
+    return {
+        "modelo": model,
+        "X_test": X_test_pca,
+        "y_test": preparar_datos["y_test"],
+        "explained_variance": pca.explained_variance_ratio_
+    }
+
+
+@asset(group_name="pca")
+def evaluar_pca(entrenar_pca: dict) -> dict:
+    modelo = entrenar_pca["modelo"]
+    X_test = entrenar_pca["X_test"]
+    y_test = entrenar_pca["y_test"]
+    var_exp = entrenar_pca["explained_variance"]
+
+    y_pred = modelo.predict(X_test)
+    mse = mean_squared_error(y_test, y_pred)
+    mae = mean_absolute_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
+
+    mlflow.log_metrics({"mse": mse, "mae": mae, "r2": r2})
+    mlflow.log_param("explained_variance", var_exp.tolist())
+
+    print(f"PCA + OLS - MSE: {mse:.2f}, MAE: {mae:.2f}, R2: {r2:.2f}")
+    print(f"Explained variance per PC: {var_exp}")
+
+    return {"mse": mse, "mae": mae, "r2": r2, "explained_variance": var_exp, "modelo": modelo}
+
+
+# --- Comparar todos ---
+@asset
+def comparar_modelos(
+    evaluar_ols: dict,
+    evaluar_lasso: dict,
+    evaluar_ridge: dict,
+    evaluar_pca: dict
+) -> str:
+    resultados = {
+        "OLS": evaluar_ols["mse"],
+        "Lasso": evaluar_lasso["mse"],
+        "Ridge": evaluar_ridge["mse"],
+        "PCA": evaluar_pca["mse"],
+    }
+
+    mejor_modelo = min(resultados, key=resultados.get)
+    mejor_mse = resultados[mejor_modelo]
+
+    print(f"\n🏆 Mejor modelo según MSE: {mejor_modelo} con MSE = {mejor_mse:.2f}")
+
+    return mejor_modelo
+
+
