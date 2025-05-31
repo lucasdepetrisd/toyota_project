@@ -1,7 +1,7 @@
 from dagster import Definitions
 from .assets import (
     load_data,
-    preparar_datos,
+    preparar_datos_ols,
     entrenar_ols,
     evaluar_ols,
     entrenar_lasso,
@@ -10,13 +10,13 @@ from .assets import (
     evaluar_ridge,
     entrenar_pca,
     evaluar_pca,
-    comparar_modelos,
+    comparar_pca_ols,
 )
 
 defs = Definitions(
     assets=[
         load_data,
-        preparar_datos,
+        preparar_datos_ols,
         # OLS
         entrenar_ols,
         evaluar_ols,
@@ -30,6 +30,6 @@ defs = Definitions(
         entrenar_pca,
         evaluar_pca,
         # Comparación
-        comparar_modelos,
+        comparar_pca_ols,
     ]
 )
