@@ -71,7 +71,7 @@ def eda(limpiar_datos: pd.DataFrame) -> pd.DataFrame:
     sns.pairplot(data=df_selected.select_dtypes(include=np.number))
     plt.suptitle("Pairplot - Todas las Features Numéricas", y=1.02)
     plt.tight_layout()
-    plt.show()
+    # plt.show()
 
     # Matriz de correlación
     corr_matrix = df_selected.select_dtypes(
@@ -80,7 +80,7 @@ def eda(limpiar_datos: pd.DataFrame) -> pd.DataFrame:
     sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', fmt='.2f')
     plt.title('Matriz de Correlación - Todas las Features Numéricas')
     plt.tight_layout()
-    plt.show()
+    # plt.show()
 
     # Detección de outliers con IQR
     def detect_outliers(df_num):
@@ -101,7 +101,7 @@ def eda(limpiar_datos: pd.DataFrame) -> pd.DataFrame:
         return outliers
 
     outliers_df = detect_outliers(df_selected.select_dtypes(include=np.number))
-    print("🔎 Outliers detectados:")
+    print("Outliers detectados:")
     print(outliers_df)
 
     # Boxplots
@@ -119,7 +119,8 @@ def eda(limpiar_datos: pd.DataFrame) -> pd.DataFrame:
                  fontsize=16, y=1.02)
     plt.subplots_adjust(hspace=0.5, wspace=0.4)
     plt.tight_layout()
-    plt.show()
+    plt.savefig("boxplots_all_features.png")
+    # plt.show()
 
     # Scatterplots contra Price (si existe)
     if "Price" in df_selected.columns:
@@ -132,7 +133,10 @@ def eda(limpiar_datos: pd.DataFrame) -> pd.DataFrame:
         plt.suptitle('Scatterplots de Features Numéricas vs Precio',
                      fontsize=16, y=1.02)
         plt.tight_layout()
-        plt.show()
+        plt.savefig("scatterplots_vs_price.png")
+        # plt.show()
+    
+    plt.close()
 
     return df_selected
 
@@ -305,7 +309,7 @@ def graficar_lasso(entrenar_lasso: dict) -> None:
     plt.grid(True)
     plt.tight_layout()
     plt.savefig("alphas_lasso.png")
-    plt.show()
+    # plt.show()
 
     # Evaluación con modelo entrenado
     modelo = entrenar_lasso["modelo"]
@@ -354,7 +358,7 @@ Coeficientes seleccionados (!= 0):
     plt.grid(axis='y')
     plt.tight_layout()
     plt.savefig("coeficientes_lasso.png")
-    plt.show()
+    # plt.show()
 
     # Loggeo a MLflow
     with mlflow.start_run(run_name="lasso_graficar_run"):
@@ -365,6 +369,8 @@ Coeficientes seleccionados (!= 0):
         mlflow.log_metric("r2_train", r2_train)
         mlflow.log_metric("mse_test", mse_test)
         mlflow.log_metric("r2_test", r2_test)
+    
+    plt.close()
 
 
 # --- Ridge ---
@@ -431,7 +437,7 @@ def graficar_ridge(entrenar_ridge: dict) -> None:
     plt.grid(True)
     plt.tight_layout()
     plt.savefig("lambdas_ridge.png")
-    plt.show()
+    # plt.show()
 
     # 2. Evaluación del modelo entrenado
     y_train_pred = modelo.predict(X_train_scaled)
@@ -475,7 +481,7 @@ Coeficientes ordenados por importancia:
     plt.grid(axis='y')
     plt.tight_layout()
     plt.savefig("coeficientes_ridge.png")
-    plt.show()
+    # plt.show()
 
     # 5. Loguear artefactos y métricas a MLflow
     with mlflow.start_run(run_name="ridge_graficar_run"):
@@ -486,6 +492,8 @@ Coeficientes ordenados por importancia:
         mlflow.log_metric("r2_train", r2_train)
         mlflow.log_metric("mse_test", mse_test)
         mlflow.log_metric("r2_test", r2_test)
+    
+    plt.close()
 
 
 # --- PCA + OLS ---
@@ -582,6 +590,8 @@ def graficar_varianza_pca(entrenar_pca: dict) -> None:
         mlflow.log_param("varianza_explicada", explained_var_ratio.tolist())
         mlflow.log_param("varianza_acumulada", cumulative_var_ratio.tolist())
 
+    plt.close()
+
 
 # -- Comparar modelos PCA + OLS vs OLS --
 @asset(group_name="comparacion")
@@ -637,6 +647,8 @@ def comparar_pca_ols(evaluar_pca: dict, evaluar_ols: dict) -> dict:
             "comparacion_mae_diff": pca_metrics["MAE"] - ols_metrics["MAE"],
             "comparacion_r2_diff": pca_metrics["R2"] - ols_metrics["R2"],
         })
+    
+    plt.close()
 
     return {"pca_metrics": pca_metrics, "ols_metrics": ols_metrics}
 
@@ -659,3 +671,43 @@ def comparar_modelos(
     mejor_modelo = min(resultados, key=resultados.get)
     print(f"Mejor modelo según MSE: {mejor_modelo} con MSE={resultados[mejor_modelo]:.4f}")
     return mejor_modelo
+
+
+# --- Analisis de Residuales ---
+@asset(group_name="comparacion")
+def analizar_residuales(entrenar_ols: dict) -> None:
+    modelo = entrenar_ols["modelo"]
+    X_test = entrenar_ols["X_test"]
+    y_test = entrenar_ols["y_test"]
+
+    y_pred = modelo.predict(X_test)
+    residuales = y_test - y_pred
+
+    # Gráfico de residuales
+    plt.figure(figsize=(10, 6))
+    sns.scatterplot(x=y_pred, y=residuales)
+    plt.axhline(0, color='red', linestyle='--', linewidth=1)
+    plt.xlabel("Predicciones")
+    plt.ylabel("Residuales")
+    plt.title("Gráfico de Residuales vs Predicciones")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig("residuales_vs_predicciones.png")
+    plt.show()
+
+    # Histograma de residuales
+    plt.figure(figsize=(10, 6))
+    sns.histplot(residuales, bins=30, kde=True)
+    plt.xlabel("Residuales")
+    plt.title("Histograma de Residuales")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig("histograma_residuales.png")
+    plt.show()
+
+    # Loguear artefactos a MLflow
+    with mlflow.start_run(run_name="analisis_residuales_run"):
+        mlflow.log_artifact("residuales_vs_predicciones.png")
+        mlflow.log_artifact("histograma_residuales.png")
+
+    plt.close()
